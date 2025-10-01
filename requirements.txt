@@ -1,0 +1,13 @@
+psycopg2~=2.9.10
+XlsxWriter~=3.2.0
+python-dateutil~=2.9.0.post0
+loguru>=0.5.3
+requests~=2.32.3
+joblib~=1.4.2
+urllib3~=2.3.0
+python-dotenv~=0.19.1
+pandas~=2.2.3
+loguru~=0.7.3
+tableauserverclient~=0.38
+pyodbc~=5.2.0
+azure-storage-blob~=12.26.0

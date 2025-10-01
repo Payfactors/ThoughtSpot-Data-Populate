@@ -1,3 +1,10 @@
+_local/*
+_local
+*.env
+src/example_working_code_run_in_parallel.py
+src/test_code_run_in_parallel*
+
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -8,6 +15,8 @@ __pycache__/
 
 # Distribution / packaging
 .Python
+.idea/
+.idea/*
 build/
 develop-eggs/
 dist/
