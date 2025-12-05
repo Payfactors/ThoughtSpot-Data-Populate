@@ -7,6 +7,12 @@ def get_orgdata_model_truncate_query() -> str:
     """
     return str(sql_string).lower()
 
+def get_orgdata_model_delete_query(input_company_id: int) -> str:
+    sql_string = f"""
+		delete from [thoughtspot].[orgdata_map_model_tbl_interim] 
+		where company_id = {input_company_id}
+	"""
+    return str(sql_string).lower()
 
 def get_orgdata_model_index_rebuild_query() -> str:
     sql_string = f"""

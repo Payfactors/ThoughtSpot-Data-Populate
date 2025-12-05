@@ -7,12 +7,13 @@ from loguru import logger
 from sql_extract.sql_company_query import get_companies_query
 from sql_extract.sql_orgdata_model_queries import get_orgdata_model_data_query
 from sql_extract.sql_orgdata_model_queries import get_orgdata_model_truncate_query
+from sql_extract.sql_orgdata_model_queries import get_orgdata_model_delete_query
 from sql_extract.sql_orgdata_model_queries import get_orgdata_model_index_rebuild_query
 from sql_extract.sql_orgdata_model_queries import get_orgdata_model_insert_json_procedure_query
 from sql_conn.sqlserver import SQLServerClient
 
 from sync_functions.model_table_sync import truncate_model_table_data, extract_and_process_model_table_data, \
-    insert_model_table_data, rebuild_model_table_index
+    insert_model_table_data, rebuild_model_table_index, delete_model_table_data
 
 from dotenv import load_dotenv
 
@@ -84,10 +85,15 @@ else:
 
 logger.info(f"Number of Companies found is : {df_companies.shape[0]}")
 
-## step 2: truncate the orgdata model table ##
-logger.info(f"truncating the orgdata model table")
-orgdata_model_truncate_query = get_orgdata_model_truncate_query()
-truncate_model_table_data(query=orgdata_model_truncate_query, connector=connector_write_source)
+## step 2: truncate or delete the data for a company in the pricings model table ##
+if input_company_id is None:
+    logger.info(f"truncating the pricings model table")
+    pricings_model_truncate_query = get_orgdata_model_truncate_query()
+    truncate_model_table_data(query=pricings_model_truncate_query, connector=connector_write_source)
+else:
+    logger.info(f"deleting the data for company : {input_company_id} in pricings model table")
+    delete_query = get_orgdata_model_delete_query(input_company_id=int(input_company_id))
+    delete_model_table_data(company_id=int(input_company_id), query=delete_query, connector=connector_write_source)
 
 ## step 3: load all orgdata model data into a variable
 logger.info(f"Extracting and processing orgdata model data for all companies in parallel")

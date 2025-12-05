@@ -121,6 +121,7 @@ class SQLServerClient:
         except pyodbc.Error as ex:
             sqlstate = ex.args[0]
             logger.error(f"Error executing query on {self.server}/{self.database}: {sqlstate}")
+            logger.error(ex)
             return None
 
     def execute_non_query(self, sql: str, params: Optional[Sequence[Any]] = None) -> int:

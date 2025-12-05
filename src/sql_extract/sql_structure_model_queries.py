@@ -8,6 +8,14 @@ def get_structure_model_truncate_query() -> str:
     return str(sql_string).lower()
 
 
+def get_structure_model_delete_query(input_company_id: int) -> str:
+    sql_string = f"""
+		delete from [thoughtspot].[structure_model_tbl_interim] 
+		where company_id = {input_company_id}
+	"""
+    return str(sql_string).lower()
+
+
 def get_structure_model_index_rebuild_query() -> str:
     sql_string = f"""
         ALTER INDEX [IDX_Structure_model_tbl_CCSI_all] ON [thoughtspot].[structure_model_tbl_interim] REBUILD PARTITION = ALL WITH (DATA_COMPRESSION = COLUMNSTORE)

@@ -26,6 +26,13 @@ def truncate_model_table_data(query: str, connector: SQLServerClient):
     logger.info(f"job model truncate query executed successfully")
 
 
+def delete_model_table_data(company_id: int, query: str, connector: SQLServerClient):
+    if debug == 1:
+        logger.info(f"model_table_delete_query is : {query}")
+    connector.execute_non_query(query)
+    logger.info(f"job model delete query for company id : {company_id} executed successfully")
+
+
 def extract_and_process_model_table_data(company_id: int, query: str, connector: SQLServerClient):
     # load structures model query
     if debug == 1:
@@ -71,5 +78,4 @@ def rebuild_model_table_index(query: str, connector: SQLServerClient):
         logger.info(f"model_table_index_rebuild_query is : {query}")
     connector.execute_non_query(query)
     logger.info(f"job model index rebuild query executed successfully")
-
 
