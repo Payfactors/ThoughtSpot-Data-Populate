@@ -4,6 +4,8 @@ import pyodbc
 from loguru import logger
 import random
 import time
+import numpy as np  # local import
+import decimal
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -22,7 +24,8 @@ class SQLServerClient:
     """
 
     def __init__(self, server, port, database, username, password
-                 , encrypt="yes", trust_server_certificate="yes", timeout_seconds=60, autocommit=True):
+                 , encrypt="yes", trust_server_certificate="yes", timeout_seconds=60, autocommit=True
+                 , command_timeout=0):
         self.server = server
         self.port = port
         self.database = database
@@ -31,19 +34,20 @@ class SQLServerClient:
         self.encrypt = encrypt
         self.trust_server_certificate = trust_server_certificate
         self.timeout_seconds = timeout_seconds
-        self.autocommit =  self._to_bool(autocommit)
+        self.autocommit = self._to_bool(autocommit)
         self.connection = None
+        self.command_timeout = command_timeout 
 
     def _build_connection_string(
-        self,
-        server,
-        port,
-        database,
-        username,
-        password,
-        encrypt="yes",
-        trust_server_certificate="yes",
-        timeout_seconds=60,
+            self,
+            server,
+            port,
+            database,
+            username,
+            password,
+            encrypt="yes",
+            trust_server_certificate="yes",
+            timeout_seconds=60,
     ) -> str:
         """Create a pyodbc connection string including host and port using SQL authentication only."""
         driver_val = "ODBC Driver 17 for SQL Server"
@@ -89,6 +93,7 @@ class SQLServerClient:
             )
             conn = pyodbc.connect(conn_string, autocommit=self.autocommit)
             self.connection = conn
+            conn.timeout = self.command_timeout
             # logger.info(f"Connection to SQL Server database {self.server}/{self.database} opened.")
             return self.connection
         except Exception as ex:
@@ -172,7 +177,8 @@ class SQLServerClient:
                 if (sqlstate == '40001' or errnum == 1205) and attempts < max_attempts - 1:
                     attempts += 1
                     sleep = base_sleep * (2 ** (attempts - 1)) + random.uniform(0, 0.2)
-                    logger.warning(f"Deadlock detected (attempt {attempts}/{max_attempts}). Retrying in {sleep:.2f}s...")
+                    logger.warning(
+                        f"Deadlock detected (attempt {attempts}/{max_attempts}). Retrying in {sleep:.2f}s...")
                     try:
                         if conn:
                             conn.close()
@@ -181,7 +187,7 @@ class SQLServerClient:
                     time.sleep(sleep)
                     continue
                 logger.error(f"Error executing query on {self.server}/{self.database}: {e}")
-                logger.info(f"params are : {params}")
+                # logger.info(f"params are : {params}")
                 raise
             finally:
                 try:
@@ -191,31 +197,122 @@ class SQLServerClient:
                     pass
 
     def executemany(self, sql: str, params: Sequence[Sequence[Any]]) -> int:
-        """Bulk execute parameterized INSERT/UPDATE/DELETE using executemany; returns total affected rows."""
+        """Bulk execute parameterized INSERT/UPDATE/DELETE using executemany; returns total affected rows.
+        Includes automatic deadlock retry logic with exponential backoff."""
+        conn = None
+        attempts = 0
+        max_attempts = 5
+        base_sleep = 0.25  # seconds
+
+        while True:
+            try:
+                conn = self.connect()
+                cur = conn.cursor()
+                cur.fast_executemany = True
+                # Normalize params: convert NaN/NaT to None (NULL), unwrap numpy scalars to Python types
+                normalized_params: list[tuple[Any, ...]] = [
+                    self._normalize_param_row(row) for row in params
+                ]
+
+                if normalized_params:
+                    num_columns = len(normalized_params[0])
+                    # Check first row to determine types
+                    input_sizes = []
+                    for value in normalized_params[0]:
+                        if isinstance(value, str):
+                            # Set large buffer for all strings (max NVARCHAR size)
+                            input_sizes.append((pyodbc.SQL_WVARCHAR, 4000, 0))  # 4000 is safe for most cases
+                        else:
+                            input_sizes.append(None)
+
+                    cur.setinputsizes(input_sizes)
+
+                cur.executemany(sql, normalized_params)
+                rows_inserted = cur.rowcount
+                # With fast_executemany and some drivers, rowcount can be -1 despite success.
+                # If no exception was raised, assume all parameter rows were applied.
+                if rows_inserted == -1:
+                    rows_inserted = len(normalized_params)
+                logger.info(f"Executed executemany affected rows is : {rows_inserted}")
+                if not self.autocommit:
+                    conn.commit()
+                cur.close()
+                return rows_inserted
+
+            except pyodbc.Error as e:
+                # SQLSTATE '40001' = serialization/deadlock; 1205 is SQL Server deadlock victim
+                sqlstate = e.args[0] if e.args else None
+                errnum = getattr(e, 'args', [None, None])[1] if len(e.args) > 1 else None
+
+                if (sqlstate == '40001' or errnum == 1205) and attempts < max_attempts - 1:
+                    attempts += 1
+                    sleep = base_sleep * (2 ** (attempts - 1)) + random.uniform(0, 0.2)
+                    logger.warning(
+                        f"Deadlock detected in executemany (attempt {attempts}/{max_attempts}). Retrying in {sleep:.2f}s...")
+                    try:
+                        if conn:
+                            conn.close()
+                    except Exception:
+                        pass
+                    time.sleep(sleep)
+                    continue
+
+                logger.error(f"Error in executemany on {self.server}/{self.database}: {e}")
+                raise
+
+            finally:
+                try:
+                    if conn:
+                        conn.close()
+                except Exception:
+                    pass
+
+    def execute_stored_procedure(self, query, params: Optional[Sequence[Any]] = None):
+        """Execute stored procedure that may have RAISERROR messages or multiple result sets.
+        Returns the LAST result set as a DataFrame, or affected row count if no result set."""
         conn = None
         try:
             conn = self.connect()
-            cur = conn.cursor()
-            cur.fast_executemany = True
-            # Normalize params: convert NaN/NaT to None (NULL), unwrap numpy scalars to Python types
-            normalized_params: list[tuple[Any, ...]] = [
-                self._normalize_param_row(row) for row in params
-            ]
-
-            cur.executemany(sql, normalized_params)
-            rows_inserted = cur.rowcount
-            # With fast_executemany and some drivers, rowcount can be -1 despite success.
-            # If no exception was raised, assume all parameter rows were applied.
-            if rows_inserted == -1:
-                rows_inserted = len(normalized_params)
-            logger.info(f"Executed executemany affected rows is : {rows_inserted}")
-            if not self.autocommit:
-                conn.commit()
-            cur.close()
-            return rows_inserted
+            cursor = conn.cursor()
+            
+            if params is None:
+                cursor.execute(query)
+            else:
+                normalized = self._normalize_params(params)
+                cursor.execute(query, normalized)
+            
+            # Skip through result sets until we find the last one with actual data
+            # RAISERROR messages and intermediate results will have cursor.description = None
+            last_result = None
+            last_columns = None
+            
+            while True:
+                if cursor.description is not None:
+                    # This is a real result set, save it
+                    last_result = cursor.fetchall()
+                    last_columns = [desc[0] for desc in cursor.description]
+                
+                # Try to move to next result set
+                if not cursor.nextset():
+                    break
+            
+            cursor.close()
+            
+            if last_result is not None and last_columns is not None:
+                df = pd.DataFrame.from_records(last_result, columns=last_columns)
+                return df
+            else:
+                # No result set found - return affected row count
+                return cursor.rowcount if cursor.rowcount >= 0 else 0
+            
+        except pyodbc.Error as ex:
+            sqlstate = ex.args[0] if ex.args else str(ex)
+            logger.error(f"Error executing stored procedure on {self.server}/{self.database}: {sqlstate}")
+            raise
         finally:
             try:
-                conn.close()
+                if conn:
+                    conn.close()
             except Exception:
                 pass
 
@@ -239,9 +336,10 @@ class SQLServerClient:
             pass
         # Numpy scalars -> native Python
         try:
-            import numpy as np  # local import
             if isinstance(value, (np.generic,)):
                 return value.item()
+            if isinstance(value, decimal.Decimal):
+                return round(value, 2)
             # numpy datetime64 -> python datetime
             if isinstance(value, (np.datetime64,)):
                 return pd.Timestamp(value).to_pydatetime()
@@ -280,7 +378,7 @@ class SQLServerClient:
         if self.connection:
             self.connection.close()
             logger.info(f"Connection to {self.server}/{self.database} closed.")
-    
+
     @staticmethod
     def _to_bool(val):
         if isinstance(val, bool):

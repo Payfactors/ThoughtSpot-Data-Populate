@@ -34,6 +34,21 @@ def get_company_pricings_count(input_company_id: int) -> str:
     return str(sql_string).lower()
 
 
+
+def get_pricings_model_insert_interim_table_per_company_query(input_company_id: int) -> str:
+    sql_string = f"""
+		    exec [thoughtspot].[usp_create_model_table_pricings_per_company] @company_id = {input_company_id}
+		"""
+    return str(sql_string).lower()
+
+
+def get_pricings_model_table_switch_query() -> str:
+    sql_string = f"""
+		    exec [thoughtspot].[usp_create_model_table_pricings_table_switch]
+		"""
+    return str(sql_string).lower()
+
+
 def get_pricings_model_data_query(input_company_id: int, input_years_to_load: int = 3) -> str:
     sql_string = f"""       
             ;with cte_cc as(
@@ -92,7 +107,8 @@ def get_pricings_model_data_query(input_company_id: int, input_years_to_load: in
                     --sj.job_code as surveys_job_code,
                     isnull(sj.job_code, md.job_code) as survey_job_code, 
                     cjpm.mdjob_code as matches_mdjob_code,
-                    sj.job_description as surveys_job_description,
+                    --substring(sj.job_description, 1,4000) as surveys_job_description,
+                    null as surveys_job_description,
                     --sj.job_title as surveys_job_title,
                     isnull(sj.job_title, md.job_title) as survey_job_title, 
                     isnull(sj.level_code, md.job_level ) as survey_job_level,
@@ -295,3 +311,6 @@ def get_pricings_model_insert_json_procedure_query() -> str:
 		exec [thoughtspot].[usp_load_pricings_model_table_json] @payload=?
 		"""
     return str(sql_string).lower()
+
+
+

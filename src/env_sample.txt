@@ -19,3 +19,4 @@ max_workers="3"
 batch_size=10000
 number_of_companies_to_load=""
 debug="0"
+command_timeout=3600
