@@ -18,7 +18,8 @@ def get_pricings_model_delete_query(input_company_id: int) -> str:
 
 def get_pricings_model_index_rebuild_query() -> str:
     sql_string = f"""
-		ALTER INDEX [IDX_pricing_model_table_CCSI_all] ON [thoughtspot].[pricing_model_table_interim] REBUILD PARTITION = ALL WITH (DATA_COMPRESSION = COLUMNSTORE)
+		ALTER INDEX [IDX_pricing_model_table_CCSI_all] ON [thoughtspot].[pricing_model_table_interim] 
+		REBUILD WITH (DATA_COMPRESSION = COLUMNSTORE, MAXDOP=0, ONLINE=ON)
 	"""
     return str(sql_string).lower()
 

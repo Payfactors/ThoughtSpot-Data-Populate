@@ -92,8 +92,9 @@ class SQLServerClient:
                 timeout_seconds=self.timeout_seconds,
             )
             conn = pyodbc.connect(conn_string, autocommit=self.autocommit)
-            self.connection = conn
+            # Set query timeout on connection (0 = no timeout / wait indefinitely)
             conn.timeout = self.command_timeout
+            self.connection = conn
             # logger.info(f"Connection to SQL Server database {self.server}/{self.database} opened.")
             return self.connection
         except Exception as ex:
